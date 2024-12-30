@@ -169,3 +169,30 @@ print("TEST")
 
 print(f"V2: {sa_v2(inputs)}")
 print(f"V1: {sa_v1(inputs)}")
+
+# BOOK 3.5
+# Causal ~ Masked attention
+
+# tired of writing
+sa = sa_v2
+norm = lambda s, k: torch.softmax(s / k.shape[-1]**.5, dim=-1)  #scaled dot norm
+
+
+q = sa.W_query(inputs)
+k = sa.W_key(inputs)
+attn_scores = q @ k.T
+attn_weights = norm(attn_scores, k)
+print(attn_weights)
+
+context_length = attn_scores.shape[0]
+mask_simple = torch.tril(torch.ones(context_length, context_length))    # tril -> returns lower triangular
+print(mask_simple)
+
+masked_simple = attn_weights * mask_simple   # * –> element-wise multiplication
+print(masked_simple)
+
+# now simple renormalization
+masked_simple_norm = masked_simple / masked_simple.sum(dim=-1, keepdim=True)
+print(masked_simple_norm, masked_simple_norm.sum(dim=1))  # all good
+
+
