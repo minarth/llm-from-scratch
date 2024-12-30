@@ -188,5 +188,3 @@ positional_emb = positional_emb_l(torch.arange(CONTEXT_LENGTH))      # arange: h
 
 print(f"Pos emb shape: {positional_emb.shape}")   # the dim is 4, 256 because we can have only 4 tokens as an input and we encode it into 256dim space
 
-
-

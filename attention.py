@@ -53,3 +53,16 @@ context_vec_2 = torch.zeros(query.shape)
 for i, x_i in enumerate(inputs):
     context_vec_2 += attn_weights_2[i]*x_i     # x_i == inputs[i]
 print(f"Context V 2: {context_vec_2}")
+
+## generalize for whole input
+attn_scores = inputs @ inputs.T                     # dot products between every row vector
+attn_weights = torch.softmax(attn_scores, dim=1)   # normalize so each row sums to 1;   dim 0-over rows(vertical dir), 1-over cols(horizontal dir), -1-over last one
+print(attn_weights)
+
+# Torch trivia shape -> [num of rows, num of cols], -1 -> over cols
+context_vectors = attn_weights @ inputs   # making error in dim=X can go unnoticed
+print(context_vectors)
+
+print(f"Sanity check {context_vec_2} == {context_vectors[1]}")
+
+# Book 3.4 - trainable weights
