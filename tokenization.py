@@ -163,4 +163,30 @@ print(embedding_layer(torch.tensor([3])))   # get embedding for element number 3
 print(embedding_layer(input_ids))
 
 # Book 2.8 positional encoding
+# GPTs use absolute pos enc
+
+VOCAB_SIZE = 50257
+OUTPUT_DIM = 256
+
+token_emb_layer = torch.nn.Embedding(VOCAB_SIZE, OUTPUT_DIM)
+
+#### Let's use the previous work
+MAX_LENGHT = 4
+dl = create_dataloader_v1(raw_text, batch_size=8, max_length=MAX_LENGHT,
+                          stride=MAX_LENGHT, shuffle=False)
+data_iter = iter(dl)
+inputs, targets = next(data_iter)
+print(f"Token IDs:\n {inputs}")
+print(f"\nShape: {inputs.shape}")
+print(f"Emb shape: {token_emb_layer(inputs).shape}")
+
+# Absolute positional embedding layer
+CONTEXT_LENGTH = MAX_LENGHT      
+positional_emb_l = torch.nn.Embedding(CONTEXT_LENGTH, OUTPUT_DIM)    # mapping Position in context to output dim
+positional_emb = positional_emb_l(torch.arange(CONTEXT_LENGTH))      # arange: https://pytorch.org/docs/stable/generated/torch.arange.html
+            # arange - a range, creates step numbers, torch.arange(1, 2.5, 0.5)  -> tensor([ 1.0000,  1.5000,  2.0000])
+
+print(f"Pos emb shape: {positional_emb.shape}")   # the dim is 4, 256 because we can have only 4 tokens as an input and we encode it into 256dim space
+
+
 
