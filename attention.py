@@ -238,14 +238,11 @@ class CausalAttention(nn.Module):
         v = self.W_value(x)
 
         attn_scores = q @ k.transpose(1,2)
-        
         attn_scores.masked_fill_(self.mask.bool()[:num_tokens, :num_tokens], -torch.inf)  # ends with _ -> inplace op
-        print(f"Attn s {attn_scores.shape}")
-        attn_w = self._norm(attn_scores, k)
-        print(f"Attn w {attn_w.shape}")
+        
+        attn_w = self._norm(attn_scores, k)        
         attn_w = self.dropout(attn_w)
-        print(f"Attn w dropped {attn_w.shape}")
-        print(f"V shape {v.shape}")
+
         context_vec = attn_w @ v
         return context_vec
 
@@ -272,4 +269,21 @@ class MultiHeadAttnWrapper(nn.Module):
         )
     def forward(self, batch):
         return torch.cat([h(batch) for h in self.heads], dim=-1)            # -1 is effective when moving from single matrix to batch inputs
+
+## test MH attn
+torch.manual_seed(123)    # only for keeping step with the book
+cl = batch.shape[1]
+d_in, d_out = 3, 2
+mha = MultiHeadAttnWrapper(d_in, d_out, cl, .0, num_heads=2)
+cont_vec = mha(batch)
+print(cont_vec)
+print(f"Shape: {cont_vec.shape}")
+
+# exercise 3.2
+# torch cat concatenates two head outputs [2,6,2] into [2,6,4].. d_out = 1 should make the trick
+mha = MultiHeadAttnWrapper(d_in, 1, cl, .0, num_heads=2)
+cont_vec = mha(batch)
+print(cont_vec)
+print(f"Shape: {cont_vec.shape}")
+
 
