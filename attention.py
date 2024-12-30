@@ -195,4 +195,66 @@ print(masked_simple)
 masked_simple_norm = masked_simple / masked_simple.sum(dim=-1, keepdim=True)
 print(masked_simple_norm, masked_simple_norm.sum(dim=1))  # all good
 
+mask = torch.triu(torch.ones(context_length, context_length), diagonal=1)
+masked = attn_scores.masked_fill(mask.bool(), -torch.inf)  # fill True positions with -inf
+#print(masked)
+attn_weights = norm(masked, k)
+print(attn_weights) 
 
+# add dropout
+torch.manual_seed(123)
+dropout = torch.nn.Dropout(.5)
+ 
+print(dropout(attn_weights))
+
+#####
+
+class CausalAttention(nn.Module):
+    def __init__(self, d_in: int, d_out: int, context_length: int, 
+                 dropout: float, qkv_bias: bool = False):
+        super().__init__()
+        self.W_query = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_key   = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_value = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.dropout = nn.Dropout(dropout)
+        
+        self.context_length = context_length  # unused?
+        self.d_out = d_out
+
+        self.register_buffer("mask", 
+                             torch.triu(torch.ones(context_length, context_length),
+                                        diagonal=1)
+                            )    # creating self.mask buffer https://pytorch.org/docs/stable/generated/torch.nn.Module.html#torch.nn.Module.register_buffer
+
+    def _norm(self, s, k):
+        #scaled dot 
+        return torch.softmax(s / k.shape[-1]**.5, dim=-1)
+
+    def forward(self, x):
+        # x can be batch
+        b, num_tokens, d_in = x.shape
+        q = self.W_query(x)
+        k = self.W_key(x)
+        v = self.W_value(x)
+
+        attn_scores = q @ k.transpose(1,2)
+        
+        attn_scores.masked_fill_(self.mask.bool()[:num_tokens, :num_tokens], -torch.inf)  # ends with _ -> inplace op
+        print(f"Attn s {attn_scores.shape}")
+        attn_w = self._norm(attn_scores, k)
+        print(f"Attn w {attn_w.shape}")
+        attn_w = self.dropout(attn_w)
+        print(f"Attn w dropped {attn_w.shape}")
+        print(f"V shape {v.shape}")
+        context_vec = attn_w @ v
+        return context_vec
+
+print("Causal Attn impl test")
+torch.manual_seed(123)
+# lets work on batches
+batch = torch.stack((inputs, inputs), dim=0)
+context_length = batch.shape[1]
+ca = CausalAttention(DIM_IN, DIM_OUT, context_length, .0)
+context_v = ca(batch)
+print(context_v)
+print(f"Shape: {context_v.shape}")
