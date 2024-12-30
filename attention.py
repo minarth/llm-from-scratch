@@ -126,11 +126,46 @@ class SelfAttentionV1(nn.Module):
         attn_scores  = queries @ keys.T   # omega
         attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)      # -1 dims are making me uneasy
         context_vec = attn_weights @ values
-        print(f"Shapes: scores {attn_scores.shape}, weights {attn_weights.shape}, context {context_vec.shape}")
+        # print(f"Shapes: scores {attn_scores.shape}, weights {attn_weights.shape}, context {context_vec.shape}")
         return context_vec
     
 
-print("SELF ATTENTION V1")
+# SELF ATTENTION V1
 torch.manual_seed(123)
 sa_v1 = SelfAttentionV1(DIM_IN, DIM_OUT)
-print(sa_v1(inputs))
+#print(sa_v1(inputs))
+
+# Self Attention V2 - using nn.Linear
+class SelfAttentionV2(nn.Module):
+    def __init__(self, d_in: int, d_out: int, qkv_bias: bool = False):
+        super().__init__()
+        self.W_query = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_key   = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_value = nn.Linear(d_in, d_out, bias=qkv_bias)
+    
+    def forward(self, x):
+        queries = self.W_query(x)
+        keys    = self.W_key(x)
+        values  = self.W_value(x)
+
+        attn_scores  = queries @ keys.T
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1) 
+        return attn_weights @ values
+    
+torch.manual_seed(789)
+sa_v2 = SelfAttentionV2(DIM_IN, DIM_OUT)
+
+
+# excercise 3.1, transfering W_i weights
+print("exc")
+print(sa_v2.W_query.weight)
+print(sa_v1.W_query.data)
+
+sa_v1.W_query.data = sa_v2.W_query.weight.T
+sa_v1.W_key.data   = sa_v2.W_key.weight.T
+sa_v1.W_value.data = sa_v2.W_value.weight.T
+
+print("TEST")
+
+print(f"V2: {sa_v2(inputs)}")
+print(f"V1: {sa_v1(inputs)}")
