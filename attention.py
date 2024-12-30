@@ -256,5 +256,20 @@ batch = torch.stack((inputs, inputs), dim=0)
 context_length = batch.shape[1]
 ca = CausalAttention(DIM_IN, DIM_OUT, context_length, .0)
 context_v = ca(batch)
-print(context_v)
+
 print(f"Shape: {context_v.shape}")
+
+# book 3.6    -  multihead
+
+#simple wrapping
+class MultiHeadAttnWrapper(nn.Module):
+    def __init__(self, d_in: int, d_out: int, context_length: int,
+                 dropout: float, num_heads: int, qkv_bias: bool = False):
+        super().__init__()
+        self.heads = nn.ModuleList(         # https://pytorch.org/docs/stable/generated/torch.nn.ModuleList.html
+            [CausalAttention(d_in, d_out, context_length, dropout, qkv_bias) 
+             for _ in range(num_heads)]
+        )
+    def forward(self, batch):
+        return torch.cat([h(batch) for h in self.heads], dim=-1)            # -1 is effective when moving from single matrix to batch inputs
+
