@@ -335,7 +335,7 @@ class MultiHeadAttention(nn.Module):
 
         attn_score = queries @ keys.transpose(2,3)
         mask_bool  = self.mask.bool()[:num_tokens, :num_tokens]
-        attn_score.mask_fill_(mask_bool, -torch.inf)   # inplace 
+        attn_score.masked_fill_(mask_bool, -torch.inf)   # inplace 
 
         attn_w = torch.softmax(attn_score / keys.shape[-1] ** .5, dim=-1)
         attn_w = self.dropout(attn_w)
@@ -347,3 +347,42 @@ class MultiHeadAttention(nn.Module):
         context_v = self.out_projection(context_v)   # combination in linlayer
 
         return context_v
+
+
+## transposition madness ilustrated
+print("="*30)
+print("MHA transposition madness")
+
+# dim (b,num_heads,num_tokens,head_dim) = [1,2,3,4]
+a = torch.tensor([[[[0.2745, 0.6584, 0.2775, 0.8573],
+                    [0.8993, 0.0390, 0.9268, 0.7388],
+                    [0.7179, 0.7058, 0.9156, 0.4340]],
+                   [[0.0772, 0.3565, 0.1479, 0.5331],
+                    [0.4066, 0.2318, 0.4545, 0.9737],
+                    [0.4606, 0.5159, 0.4220, 0.5786]]]])
+print(a)
+
+# print()
+# print(a @ a.transpose(2,3))
+# first_head = a[0, 0, :, :]
+
+# print(f"1st head {first_head}")
+# first_res = first_head @ first_head.T
+# print(f"first res {first_res}")
+
+print(a.view(1, 2, 12))
+print("="*30)
+torch.manual_seed(123)
+batch_size, context_length, d_in = batch.shape
+d_out = 2
+mha = MultiHeadAttention(d_in, d_out, context_length, .0, num_heads=2)
+context_vec = mha(batch)
+print(context_vec)
+print(context_vec.shape)
+
+# exercise 3.3
+gpt2_mha = MultiHeadAttention(d_in=768, 
+                             d_out=768, 
+                             context_length=1024, 
+                             dropout=0.1, 
+                             num_heads=12)
