@@ -65,4 +65,48 @@ print(context_vectors)
 
 print(f"Sanity check {context_vec_2} == {context_vectors[1]}")
 
-# Book 3.4 - trainable weights
+# Book 3.4 - trainable weights a.k.a. scaled dot-product attention
+# again, starting with second input as a selected query input
+
+x_2 = inputs[1]    # query input, but "query" has different meaning now, so calling it x_2
+
+DIM_IN = inputs.shape[1]    # number of cols
+DIM_OUT = 2                 # selected, usually same as input one, 2 for EDU purposes
+
+# we do this for one attn head
+torch.manual_seed(123)
+
+W_query = torch.nn.Parameter(torch.rand(DIM_IN, DIM_OUT), requires_grad=False)
+W_key   = torch.nn.Parameter(torch.rand(DIM_IN, DIM_OUT), requires_grad=False)
+W_value = torch.nn.Parameter(torch.rand(DIM_IN, DIM_OUT), requires_grad=False)
+# requires_grad=False for printable outputs, will set to True in later chapters
+
+query_2 = x_2 @ W_query     # we calc query only for query token, rest is against all inputs
+key_2   = x_2 @ W_key
+value_2 = x_2 @ W_value
+print(query_2)
+
+keys   = inputs @ W_key
+values = inputs @ W_value
+print(f"Keys shape {keys.shape}")
+print(f"Values shape {values.shape}")
+
+# simple calc for one instance
+attn_score_22 = torch.dot(query_2, key_2)
+print(attn_score_22)
+
+# full matmul calc
+attn_scores_2 = query_2 @ keys.T
+print(attn_scores_2)
+
+# normalization sqrt(d_k), called scaled-dot -> improves training perf
+D_K = keys.shape[-1]
+attn_weights_2 = torch.softmax(attn_scores_2 / D_K ** 0.5, dim=-1)
+print(attn_weights_2)
+
+# calc context vectors
+context_vec_2 = attn_weights_2 @ values
+print(context_vec_2)
+
+
+# compact implementation
