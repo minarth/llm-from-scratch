@@ -116,31 +116,51 @@ class GPTDatasetV1(Dataset):
         super().__init__()
         self.input_ids = []
         self.target_ids = []
-        
+
         # txt seems like all the string texts
         token_ids = tokenizer.encode(txt)
         for i in range(0, len(token_ids)-max_length, stride):
             self.input_ids.append(torch.tensor(
-                token_ids[i:i+max_length]))   # input chunk 
+                token_ids[i:i+max_length]))   # input chunk
             self.target_ids.append(torch.tensor(
                 token_ids[i+1:i+max_length+1]))     # target chunk
 
     def __len__(self):
         return len(self.input_ids)
-    
+
     def __getitem__(self, index):
         return self.input_ids[index], self.target_ids[index]
 
-def create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128, 
+def create_dataloader_v1(txt, batch_size=4, max_length=256, stride=128,
                          shuffle=True, drop_last=True, num_workers=0):
     tokenizer = tiktoken.get_encoding("gpt2")
     dataset = GPTDatasetV1(txt, tokenizer, max_length, stride)
 
-    return DataLoader(dataset, batch_size=batch_size, 
-                            shuffle=shuffle, drop_last=drop_last, 
+    return DataLoader(dataset, batch_size=batch_size,
+                            shuffle=shuffle, drop_last=drop_last,
                             num_workers=num_workers)
-    
-## Test runs 
+
+## Test runs
 dl = create_dataloader_v1(raw_text, 2, 4, 2, False)
 data_iter = iter(dl)
-pprint(next(data_iter))
+# pprint(next(data_iter))
+
+# BOOk 2.7
+# embedding layer definition
+
+input_ids = torch.tensor([2,3,5,1])
+VOCAB_SIZE = 6
+OUTPUT_DIM = 3
+
+torch.manual_seed(123)   # this belongs up
+embedding_layer = torch.nn.Embedding(VOCAB_SIZE, OUTPUT_DIM)
+
+print(embedding_layer.weight)     # random init
+
+print(embedding_layer(torch.tensor([3])))   # get embedding for element number 3 / in our case token.. EMB layer is a lookup table
+
+# gettin embeddings for multiple inputs at once (smart matrix multiplication)
+print(embedding_layer(input_ids))
+
+# Book 2.8 positional encoding
+
