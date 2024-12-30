@@ -110,3 +110,27 @@ print(context_vec_2)
 
 
 # compact implementation
+import torch.nn as nn
+class SelfAttentionV1(nn.Module):
+    def __init__(self, d_in: int, d_out: int):
+        super().__init__()
+        self.W_query = nn.Parameter(torch.rand(d_in, d_out))
+        self.W_key   = nn.Parameter(torch.rand(d_in, d_out))
+        self.W_value = nn.Parameter(torch.rand(d_in, d_out))
+    
+    def forward(self, x):
+        keys    = x @ self.W_key
+        queries = x @ self.W_query
+        values  = x @ self.W_value
+
+        attn_scores  = queries @ keys.T   # omega
+        attn_weights = torch.softmax(attn_scores / keys.shape[-1]**0.5, dim=-1)      # -1 dims are making me uneasy
+        context_vec = attn_weights @ values
+        print(f"Shapes: scores {attn_scores.shape}, weights {attn_weights.shape}, context {context_vec.shape}")
+        return context_vec
+    
+
+print("SELF ATTENTION V1")
+torch.manual_seed(123)
+sa_v1 = SelfAttentionV1(DIM_IN, DIM_OUT)
+print(sa_v1(inputs))
