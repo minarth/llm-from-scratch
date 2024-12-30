@@ -287,3 +287,63 @@ print(cont_vec)
 print(f"Shape: {cont_vec.shape}")
 
 
+# parallel multihead attn
+
+class MultiHeadAttention(nn.Module):
+
+    def __init__(self, d_in: int, d_out: int, context_length: int,
+                 dropout: float, num_heads: int, qkv_bias: bool = False):
+        super().__init__()
+        assert (d_out % num_heads == 0), "d_out muset be divisible by num_heads"    # nice
+
+        self.d_out = d_out
+        self.num_heads = num_heads
+        self.head_dim = d_out // num_heads
+        
+        # MHA building blocks
+        self.W_query = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_key   = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.W_value = nn.Linear(d_in, d_out, bias=qkv_bias)
+        self.dropout = nn.Dropout(dropout)
+        self.register_buffer("mask", 
+                             torch.triu(torch.ones(context_length, context_length),
+                                        diagonal=1)
+                            )
+        self.out_projection = nn.Linear(d_out, d_out)        
+
+    def forward(self, batch):
+        # using batch name to signal we are passed single "x" input
+        b, num_tokens, d_in = batch.shape
+        
+        # i like to use q,k,v but somehow it make the readibility worse
+        queries = self.W_query(batch)
+        keys    = self.W_key(batch)
+        values  = self.W_value(batch)
+        #    -> all shape = b, num_tokens, d_out
+
+        # now reshape/split the matricies to separate heads
+        #   (b, num_tokens, d_out) -> (b, num_tokens, num_heads, head_dim)
+        queries = queries.view(b, num_tokens, self.num_heads, self.head_dim)
+        keys    = keys.view(b, num_tokens, self.num_heads, self.head_dim)
+        values  = values.view(b, num_tokens, self.num_heads, self.head_dim)
+
+        # now transpose, we need to work with num_tokens x head_dim matricies
+        #   (b, num_tokens, num_heads, head_dim) -> (b, num_heads, num_tokens, head_dim)
+        queries = queries.transpose(1,2)
+        keys    = keys.transpose(1,2)
+        values  = values.transpose(1,2)
+
+        attn_score = queries @ keys.transpose(2,3)
+        mask_bool  = self.mask.bool()[:num_tokens, :num_tokens]
+        attn_score.mask_fill_(mask_bool, -torch.inf)   # inplace 
+
+        attn_w = torch.softmax(attn_score / keys.shape[-1] ** .5, dim=-1)
+        attn_w = self.dropout(attn_w)
+
+        context_v =  (attn_w @ values).transpose(1,2)    # transpose to b, num_tok, n_head, head_dim  -> back to original shape after view()
+
+        # https://stackoverflow.com/questions/48915810/what-does-contiguous-do-in-pytorch
+        context_v = context_v.contiguous().view(b, num_tokens, self.d_out)
+        context_v = self.out_projection(context_v)   # combination in linlayer
+
+        return context_v
