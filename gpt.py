@@ -350,3 +350,79 @@ class GPTModel(nn.Module):
         logits = self.out_head(x)
         return logits
     
+# lets test it
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG_124M)
+
+out = model(batch)
+print(f"innput batch: {batch}")
+print(f"output shape: {out.shape}")
+print(out)
+
+total_params = sum(p.numel() for p in model.parameters())
+print(f"total params: {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
+
+# exercise 4.1
+# calc params in transformers an FF parts
+ff_params  = sum([sum([p.numel() for p in b.ff.parameters()]) for b in model.trf_blocks])
+mha_params = sum([sum([p.numel() for p in b.atn.parameters()]) for b in model.trf_blocks])
+
+print(f"FF: {ff_params:,}, MHA: {mha_params:,}")
+
+# get mem footprint
+total_size_bytes = total_params * 4     # float 32 has 4 bytes
+total_size_mb = total_size_bytes / (1024*1024)
+print(f"total mem: {total_size_mb:.2f}MB")
+
+
+print("-----size ests-----")
+## exercise 4.2
+# get sizes for m and xl gpt2 models
+GPT_CONFIG_MEDIUM = {
+    "vocab_size": 50257, 
+    "context_length": 1024, 
+    "emb_dim": 1024, 
+    "n_heads": 16, 
+    "n_layers": 24,
+    "drop_rate": .1, 
+    "qkv_bias": False,
+}
+
+model_m = GPTModel(GPT_CONFIG_MEDIUM)
+total_params = sum(p.numel() for p in model_m.parameters())
+total_size_mb = (total_params*4) / (1024*1024*1024)
+print(f"total params medium : {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
+print(f"total mem medium: {total_size_mb:.2f}GB")
+
+GPT_CONFIG_LARGE = {
+    "vocab_size": 50257, 
+    "context_length": 1024, 
+    "emb_dim": 1600, 
+    "n_heads": 25, 
+    "n_layers": 48,
+    "drop_rate": .1, 
+    "qkv_bias": False,
+}
+model_xl = GPTModel(GPT_CONFIG_LARGE)
+total_params = sum(p.numel() for p in model_xl.parameters())
+total_size_mb = (total_params*4) / (1024*1024*1024)
+print(f"total params large : {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
+print(f"total mem large: {total_size_mb:.2f}GB")
+
+# book 4.7
+# inference with softmax and 
+
+def generate_text_simple(model, tokens, max_new_tokens, context_size):
+    for _ in range(max_new_tokens):
+        tokens_cond = tokens[:, -context_size:]
+        with torch.no_grad():
+            logits = model(tokens_cond)
+        
+        logits = logits[:, -1, :]  # last step of every batch part
+        probas = torch.softmax(logits, dim=-1)
+        token_next = torch.argmax(probas, dim=-1, keepdim=True)
+        tokens = torch.cat((tokens, token_next), dim=1)
+    
+    return tokens
+
+
