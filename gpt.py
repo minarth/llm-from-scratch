@@ -387,12 +387,12 @@ GPT_CONFIG_MEDIUM = {
     "drop_rate": .1, 
     "qkv_bias": False,
 }
-
-model_m = GPTModel(GPT_CONFIG_MEDIUM)
-total_params = sum(p.numel() for p in model_m.parameters())
-total_size_mb = (total_params*4) / (1024*1024*1024)
-print(f"total params medium : {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
-print(f"total mem medium: {total_size_mb:.2f}GB")
+# this takes too long
+# model_m = GPTModel(GPT_CONFIG_MEDIUM)
+# total_params = sum(p.numel() for p in model_m.parameters())
+# total_size_mb = (total_params*4) / (1024*1024*1024)
+# print(f"total params medium : {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
+# print(f"total mem medium: {total_size_mb:.2f}GB")
 
 GPT_CONFIG_LARGE = {
     "vocab_size": 50257, 
@@ -403,15 +403,17 @@ GPT_CONFIG_LARGE = {
     "drop_rate": .1, 
     "qkv_bias": False,
 }
-model_xl = GPTModel(GPT_CONFIG_LARGE)
-total_params = sum(p.numel() for p in model_xl.parameters())
-total_size_mb = (total_params*4) / (1024*1024*1024)
-print(f"total params large : {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
-print(f"total mem large: {total_size_mb:.2f}GB")
+
+# this takes too long
+# model_xl = GPTModel(GPT_CONFIG_LARGE)
+# total_params = sum(p.numel() for p in model_xl.parameters())
+# total_size_mb = (total_params*4) / (1024*1024*1024)
+# print(f"total params large : {total_params:,}")   # original GPT2 ties together input token embedding and output layer (same dims), resulting in some speedups
+# print(f"total mem large: {total_size_mb:.2f}GB")
 
 # book 4.7
 # inference with softmax and 
-
+print("====4.7====")
 def generate_text_simple(model, tokens, max_new_tokens, context_size):
     for _ in range(max_new_tokens):
         tokens_cond = tokens[:, -context_size:]
@@ -425,4 +427,19 @@ def generate_text_simple(model, tokens, max_new_tokens, context_size):
     
     return tokens
 
+# test it
 
+start_context = "Hello, I am"
+encoded = tokenizer.encode(start_context)
+print(f"enc: {encoded}")
+encoded_tensor = torch.tensor(encoded).unsqueeze(0)
+print(f"enc tensor shape {encoded_tensor.shape}")
+
+model.eval()   # turns off dropouts and such
+out = generate_text_simple(model, encoded_tensor, 6, GPT_CONFIG_124M["context_length"])
+print(f"out: {out}")
+print(f"out len: {out.shape}")
+
+# ids 2 tokens
+decoded_text = tokenizer.decode(out.squeeze(0).tolist())
+print(f"decoded {decoded_text}")
