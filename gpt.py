@@ -155,8 +155,6 @@ class GeLU(nn.Module):
         return .5*x*(1 + torch.tanh(torch.sqrt(torch.tensor(2.0/torch.pi)) 
                      * (x + .044715 * torch.pow(x,3))))   # pow vs ** ?
 
-from term_plot import plot_to_terminal
-
 import matplotlib.pyplot as plt
 gelu, relu = GeLU(), nn.ReLU()
 
@@ -187,5 +185,168 @@ class FeedForward(nn.Module):
         return self.layers(x)
 
 ffn = FeedForward(GPT_CONFIG_124M)
-x = torch.rand(2, 3, 768)
+x = torch.rand(2, 3, 768)    # 2 examples, 3 token each
 print(ffn(x).shape)
+
+# book 4.4 - skip connections 
+print("-"*10)
+class ExampleDeepNN(nn.Module):
+    def __init__(self, layer_s: list[int], use_skips: bool):
+        super().__init__()
+        self.use_skips = use_skips
+        self.layers = nn.ModuleList([
+            nn.Sequential(nn.Linear(in_d, out_d), GeLU()) for in_d, out_d in zip(layer_s[:-1], layer_s[1:])
+        ])
+
+    def forward(self, x: torch.Tensor):
+        for l in self.layers:
+            output = l(x)
+            if self.use_skips and x.shape == output.shape:
+                x = x + output    # dont use += -> leads to inplace runtime s*~@${#~#}
+            else:
+                x = output
+        return x
+
+layers = [3, 3,  3, 3, 3, 1]
+sample_input = torch.tensor([[1., 0., -1.]])
+torch.manual_seed(123)
+no_skips = ExampleDeepNN(layers, False)
+print(no_skips(sample_input))
+def print_gradients(model, x):
+    output = model(x)
+    target = torch.tensor([[0.]])
+
+    loss = nn.MSELoss()
+    loss = loss(output, target)
+    loss.backward()
+    for name, param in model.named_parameters():
+        if "weight" in name:
+            print(f"{name} has grad mean {param.grad.abs().mean().item()}")
+print_gradients(no_skips, sample_input)
+
+# now skips
+print("-"*10)
+torch.manual_seed(123)
+yes_skips = ExampleDeepNN(layers, True)
+print_gradients(yes_skips, sample_input)
+
+GPT_CONFIG_124M = {
+    "vocab_size": 50257, 
+    "context_length": 1024, 
+    "emb_dim": 768, 
+    "n_heads": 12, 
+    "n_layers": 12,
+    "drop_rate": .1, 
+    "qkv_bias": False,
+}
+
+# book 4.5  - transformer block
+from attention import MultiHeadAttention
+
+class ReferentialTransformerBlock(nn.Module):
+    def __init__(self, c):
+        super().__init__()
+        self.atn = MultiHeadAttention(
+            d_in=c["emb_dim"],
+            d_out=c["emb_dim"],
+            context_length=c["context_length"],
+            dropout=c["drop_rate"],
+            num_heads=c["n_heads"],
+            qkv_bias=c["qkv_bias"],
+        )
+        self.ff      = FeedForward(c)
+        self.norm1   = LayerNorm(c["emb_dim"])
+        self.norm2   = LayerNorm(c["emb_dim"])
+        self.dropout = nn.Dropout(c["drop_rate"])
+    
+    def forward(self, x: torch.Tensor):
+        skip = x    # save referention
+        x = self.norm1(x)
+        x = self.atn(x)
+        x = self.dropout(x)
+        x = x + skip
+
+        skip = x
+        x = self.norm2(x)
+        x = self.ff(x)
+        x = self.dropout(x)
+        
+        return x + skip
+
+
+class TransformerBlock(nn.Module):
+    """
+        this is different than in the book, because i tried to code it without looking at the solution
+    """
+    def __init__(self, c):
+        super().__init__()
+
+        self.decoder = nn.Sequential(
+            LayerNorm(emb_dim=c["emb_dim"]),
+            MultiHeadAttention(d_in=c["emb_dim"], d_out=c["emb_dim"],
+                               context_length=c["context_length"],
+                               dropout=c["drop_rate"], num_heads=c["n_heads"],
+                               qkv_bias=c["qkv_bias"]),
+            nn.Dropout(c["drop_rate"]),
+        )
+
+        self.out_layer = nn.Sequential(
+            LayerNorm(emb_dim=c["emb_dim"]),
+            FeedForward(c), 
+            nn.Dropout(c["drop_rate"]),
+        )
+
+    def forward(self, x):       # still prefer batch naming for input var
+        x = x + self.decoder(x)
+        x = x + self.out_layer(x)
+
+        return x
+
+## test it 
+print("-"*20)
+torch.manual_seed(123)
+x = torch.rand(2, 4, 768)    # two examples, 4 tokens each
+block = TransformerBlock(GPT_CONFIG_124M)
+output = block(x)
+
+print(f"in shape {x.shape} | out shape {output.shape}")
+ref_block = ReferentialTransformerBlock(GPT_CONFIG_124M)
+ref_output = ref_block(x)
+print(f"in shape {x.shape} | out shape {ref_output.shape}")
+
+# book 4.6  - lets get GPT
+print("------4.6------")
+class GPTModel(nn.Module):
+    def __init__(self, c):
+        super().__init__()
+        # layer of tokenization
+        self.tok_emb = nn.Embedding(c["vocab_size"], c["emb_dim"])   # in, out dims
+        # layer of positional embedding
+        self.pos_emb = nn.Embedding(c["context_length"], c["emb_dim"]) 
+        # dropout
+        self.drop_emb = nn.Dropout(c["drop_rate"])
+        
+        # transformer layerS
+        self.trf_blocks = nn.Sequential(
+            *[ReferentialTransformerBlock(c) for _ in range(c["n_layers"])]
+        )
+
+        self.final_norm = LayerNorm(c["emb_dim"])
+        self.out_head   = nn.Linear(c["emb_dim"], c["vocab_size"], bias=False)
+
+    def forward(self, in_idx):
+        batch_size, sequence_len = in_idx.shape
+        tok_e = self.tok_emb(in_idx)
+        
+        # this retrives vectors for positions in sequence 
+        #   (first token in sequence has always same pos vector)
+        pos_e = self.pos_emb(torch.arange(sequence_len, device=in_idx.device))
+
+        x = tok_e + pos_e    
+        x = self.drop_emb(x)
+        x = self.trf_blocks(x)
+        x = self.final_norm(x)
+        
+        logits = self.out_head(x)
+        return logits
+    
