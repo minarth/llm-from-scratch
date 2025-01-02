@@ -49,7 +49,7 @@ class DummyGPTModel(nn.Module):
         # layer of positional embedding
         self.pos_emb = nn.Embedding(c["context_length"], c["emb_dim"]) 
         # dropout
-        self.drop_emb = nn. Embedding(c["drop_rate"])
+        self.drop_emb = nn.Dropout(c["drop_rate"])
         
         # transformer layerS
         self.trf_blocks = nn.Sequential(
@@ -57,7 +57,7 @@ class DummyGPTModel(nn.Module):
         )
 
         self.final_norm = DummyLayerNorm(c["emb_dim"])
-        self.out_head   = nn.Linear(c["emd_dim"], c["vocab_size"], bias=False)
+        self.out_head   = nn.Linear(c["emb_dim"], c["vocab_size"], bias=False)
 
     def forward(self, in_idx):
         batch_size, sequence_len = in_idx.shape
@@ -76,5 +76,24 @@ class DummyGPTModel(nn.Module):
         return logits
 
 
+# data prep example
 
+import tiktoken
+tokenizer = tiktoken.get_encoding("gpt2")
+batch = []
+txt1  = "Every effort moves you"
+txt2  = "Every day holds a"
 
+batch.append(torch.tensor(tokenizer.encode(txt1)))
+batch.append(torch.tensor(tokenizer.encode(txt2)))
+
+batch = torch.stack(batch, dim=0)
+print(f"shape of batch: {batch.shape}")
+print(f"batch: {batch}")
+print("-"*10)
+# init model
+torch.manual_seed(123)
+model = DummyGPTModel(GPT_CONFIG_124M)
+logits = model(batch)
+
+print(f"output shape {logits.shape}\nlogits {logits}")
