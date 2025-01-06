@@ -168,4 +168,96 @@ with torch.no_grad():
 print(f"TRN loss: {train_loss}\nVAL loss: {val_loss}")
 
 
-# training
+################################################################################
+
+def evaluate_model(model, train_loader, val_loader, device, eval_iter):
+    model.eval()
+    with torch.no_grad():
+        train_l = loader_loss(train_loader, model, device, num_batches=eval_iter)
+        val_l   = loader_loss(val_loader, model, device, num_batches=eval_iter)
+    model.train()  # reverse model.eval() setup
+    return train_l, val_l
+
+
+def generate_and_print_sample(model, tokenizer, device, start_context):
+    model.eval()
+
+    context_size = model.pos_emb.weight.shape[0]
+    encoded = text_to_token_ids(start_context, tokenizer).to(device)
+    with torch.no_grad():
+        token_ids = generate_text_simple(model, encoded, max_new_tokens=50, 
+                                         context_size=context_size)
+    decoded = token_ids_to_text(token_ids, tokenizer) 
+    print(decoded.replace('\n', ' EOL '))
+
+    model.train()
+
+
+# training, types for this are hard vv
+def train_model_simple(
+        model,
+        train_loader, 
+        val_loader,
+        optimizer, 
+        device, 
+        num_epochs, 
+        eval_freq, 
+        eval_iter,          # same as num_batches in loss evaluation for whole data loader, just, why? 
+        start_context, 
+        tokenizer
+):
+    
+    train_losses, val_losses, track_tokens_seen = [], [], []
+    tokens_seen, global_step = 0, -1
+
+    for epoch in range(num_epochs):
+        model.train()    # main train loop
+        #for input_batch, target_batch in train_loader:
+        for x_batch, y_batch in train_loader:
+            optimizer.zero_grad()
+            loss = batch_loss(x_batch, y_batch, model, device)
+            loss.backward()   # gradient calc, its like magic
+            optimizer.step()
+
+            tokens_seen += x_batch.numel()   # number of elements in structure https://pytorch.org/docs/stable/generated/torch.numel.html
+            global_step += 1
+
+            if global_step % eval_freq == 0: 
+                train_loss, val_loss = evaluate_model(
+                    model, train_loader, val_loader, device, eval_iter
+                )
+                train_losses.append(train_loss)
+                val_losses.append(val_loss)
+
+                track_tokens_seen.append(tokens_seen)
+
+                print(f"EP {epoch+1} step {global_step:06d}: trainL {train_loss:.3f}, valL {val_loss:.3f}")
+
+        generate_and_print_sample(model, tokenizer, device, start_context)
+    return train_losses, val_losses, track_tokens_seen
+
+
+
+#######
+# run small train loop
+#######
+
+torch.manual_seed(123)
+model = GPTModel(GPT_CONFIG)    # smaller config
+model.to(device)
+optimizer = torch.optim.AdamW(
+    model.parameters(),
+    lr=.0004,
+    weight_decay=.1
+)
+
+NUM_EPOCHS = 10
+EVAL_FREQ = 5
+EVAL_ITER = 5
+START_CONTEXT = "Every effort moves you"
+print("STARTING TRAINING LOOP")
+train_l, val_l, tokens_seen = train_model_simple(
+    model, train_loader, val_loader, optimizer,
+    device, NUM_EPOCHS, EVAL_FREQ, EVAL_ITER, START_CONTEXT, tokenizer
+)
+
