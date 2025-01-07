@@ -256,8 +256,40 @@ EVAL_FREQ = 5
 EVAL_ITER = 5
 START_CONTEXT = "Every effort moves you"
 print("STARTING TRAINING LOOP")
-train_l, val_l, tokens_seen = train_model_simple(
-    model, train_loader, val_loader, optimizer,
-    device, NUM_EPOCHS, EVAL_FREQ, EVAL_ITER, START_CONTEXT, tokenizer
-)
 
+
+import matplotlib.pyplot as plt
+def plot_losses(epochs: list[int], tokens: list[int], train_l: list[float], val_l: list[float]):
+    fig, ax1 = plt.subplots(figsize=(5,3))
+    ax1.plot(epochs, train_l, label="train")
+    ax1.plot(epochs, val_l, label="val", linestyle="-.")
+    ax1.set_xlabel("epochs")
+    ax1.set_ylabel("loss")
+
+    ax1.legend(loc="upper right")
+
+    ax2 = ax1.twiny()
+    ax2.plot(tokens, train_l, alpha=0)
+    ax2.set_xlabel("tokens")
+    fig.tight_layout()
+
+
+    plt.savefig("gpt2_train_v_val.png")
+
+if False:
+    train_l, val_l, tokens_seen = train_model_simple(
+        model, train_loader, val_loader, optimizer,
+        device, NUM_EPOCHS, EVAL_FREQ, EVAL_ITER, START_CONTEXT, tokenizer
+    )
+
+    torch.save(model, "data/gpt2-smol")
+
+    # show the train loss and validation loss next to each other
+    epoch_tensor = torch.linspace(1, NUM_EPOCHS, len(train_l))
+    plot_losses(epoch_tensor, tokens_seen, train_l, val_l)
+else:
+    model = torch.load("data/gpt2-smol", weights_only=False )
+    model.eval()
+
+
+## lets go
