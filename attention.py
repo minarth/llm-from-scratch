@@ -35,7 +35,7 @@ print(attn_scores_2)
 attn_weights_2_tmp = attn_scores_2 / attn_scores_2.sum()   # normalize so sum()=1
 # in realworld softmax is advised for normalization
 
-print(f"[Classic] Weights: {attn_weights_2_tmp} and sum = {attn_weights_2_tmp.sum()}")
+print(f"[classic] weights: {attn_weights_2_tmp} and sum = {attn_weights_2_tmp.sum()}")
 
 def softmax_naive(x):
     # there is a torch function for this, but this is more clear

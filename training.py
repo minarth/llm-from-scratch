@@ -293,3 +293,86 @@ else:
 
 
 ## lets go
+# book 5.3 - random decoding
+
+model.to("cpu")
+model.eval()
+
+tokenizer = tiktoken.get_encoding("gpt2")
+token_ids = generate_text_simple(model, 
+                                 text_to_token_ids("Every effort moves you", tokenizer), 
+                                 max_new_tokens=25, 
+                                 context_size=GPT_CONFIG["context_length"])
+
+print(f"output text: {token_ids_to_text(token_ids, tokenizer)}")
+
+# temp scaling
+
+vocab = {"closer": 0, "every": 1, "effort":2, "forward": 3, "inches": 4,
+         "moves": 5, "pizza": 6, "toward": 7, "you": 8}
+inverse_vocab = {v: k for k, v in vocab.items()}
+
+# random example
+next_token_logits = torch.tensor([
+    4.51, .89, -1.9, 6.75, 1.63, -1.62, -1.89, 6.28, 1.79
+])
+
+probas = torch.softmax(next_token_logits, dim=0)
+next_token_idx = torch.argmax(probas).item()
+print(probas)
+print(inverse_vocab[next_token_idx])
+
+torch.manual_seed(123)
+# now do multinomial sample https://pytorch.org/docs/stable/generated/torch.multinomial.html
+next_token_id = torch.multinomial(probas, num_samples=1).item() # item -> returns value from the tensor
+print(f"sample: {inverse_vocab[next_token_id]}")
+
+# lets do 1000 samples
+def sample_n(probas, n):
+    torch.manual_seed(123)
+    samples = [torch.multinomial(probas, num_samples=1).item() for _ in range(n)]
+    ids = torch.bincount(torch.tensor(samples))
+    for i, freq in enumerate(ids):
+        print(f"{inverse_vocab[i]}: {freq}")
+
+sample_n(probas, 1000)
+
+# i had to disable cursor suggestions cause learning too little
+# temperature scaling
+
+# temperature is just fancy word for dividing logits -> (0, 1> peaky distr, (1, inf) unfirm-ish distr
+def softmax_with_temp(logits, temperature: float) -> torch.Tensor:
+    assert temperature > 0, "temp needs to be positive!"
+    scaled_logits = logits / temperature
+    return torch.softmax(scaled_logits, dim=0)
+
+temps = [1, .1, 5, ]
+
+scaled_probas = [softmax_with_temp(next_token_logits, t) for t in temps]
+
+x = torch.arange(len(vocab))
+
+bar_width = .15
+fig, ax = plt.subplots(figsize=(5,3))
+for i, t in enumerate(temps):
+    rects = ax.bar(x + i*bar_width, scaled_probas[i],
+                   bar_width, label=f"t {t}")
+    ax.set_ylabel("probs")
+    ax.set_xticks(x)
+    ax.set_xticklabels(vocab.keys(), rotation=90)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig("temp.png")    
+
+
+# exercise 5.1, print sample freqs
+print("%"*10)
+for i, t in enumerate(temps):
+    print(t)
+    print(f"probs: {scaled_probas[i]}")
+    sample_n(scaled_probas[i], 1000)
+    print("-"*10)
+
+# topk sampling
+## logits -> top3 -> -inf mask -> softmax
+
