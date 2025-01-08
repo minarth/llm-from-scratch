@@ -432,3 +432,45 @@ token_ids = generate(
 )
 
 print(f"topk + temp: {token_ids_to_text(token_ids, tokenizer)}")
+
+# book 5.4 - save/load... already doing that so the speed of run is good (above)
+torch.save(model.state_dict(), "data/model.pth")
+
+model2 = GPTModel(GPT_CONFIG)
+model2.load_state_dict(torch.load("data/model.pth", map_location=device))
+model2.eval() # switch to eval mode
+
+# smarter save (w optimizer)
+
+torch.save({
+    "model_state_dict": model.state_dict(), 
+    "optimizer_state_dict": optimizer.state_dict(),
+    },
+    "data/model_n_optimizer.pth"
+    )
+
+checkpoint = torch.load("data/model_n_optimizer.pth", map_location=device)
+model3 = GPTModel(GPT_CONFIG)
+model3.load_state_dict(checkpoint["model_state_dict"])
+
+optimizer2 = torch.optim.AdamW(model3.parameters(), lr=5e-4, weight_decay=.1)
+optimizer2.load_state_dict(checkpoint["optimizer_state_dict"])
+
+# exercise 5.4
+print("Additional training for loaded model+opt")
+model3.train()
+tl, vl, tokens = train_model_simple(
+    model3,
+    train_loader, 
+    val_loader, 
+    optimizer2,
+    device,
+    num_epochs=1,
+    eval_freq=EVAL_FREQ, 
+    eval_iter=EVAL_ITER,
+    start_context=START_CONTEXT,
+    tokenizer=tokenizer
+)
+
+# book 5.5 load openAI weights
+
