@@ -465,7 +465,7 @@ tl, vl, tokens = train_model_simple(
     val_loader, 
     optimizer2,
     device,
-    num_epochs=1,
+    num_epochs=0, # change to 1 to start training
     eval_freq=EVAL_FREQ, 
     eval_iter=EVAL_ITER,
     start_context=START_CONTEXT,
@@ -474,3 +474,116 @@ tl, vl, tokens = train_model_simple(
 
 # book 5.5 load openAI weights
 
+from gpt_download import download_and_load_gpt2
+settings, params = download_and_load_gpt2(
+    model_size="124M",
+    models_dir="gpt2"
+)
+
+print(f"set: {settings}")
+print(f"params: {params.keys()}")
+
+print(params["wte"])
+print(f"tkn emb shape: {params['wte'].shape}")
+
+model_configs = {
+    "gpt-small": {"emb_dim": 768, "n_layers": 12, "n_heads": 12},
+    "gpt-medium": {"emb_dim": 1024, "n_layers": 24, "n_heads": 16},
+    "gpt-large": {"emb_dim": 1280, "n_layers": 36, "n_heads": 20},
+    "gpt-xl": {"emb_dim": 1600, "n_layers": 48, "n_heads": 25},
+}
+
+model_name = "gpt-small"
+OPENAI_CONFIG = GPT_CONFIG.copy()
+OPENAI_CONFIG.update(model_configs[model_name])
+
+OPENAI_CONFIG.update({"context_length": 1024})
+OPENAI_CONFIG.update({"qkv_bias": True})
+
+gpt2 = GPTModel(OPENAI_CONFIG)
+gpt2.eval()
+
+def assign(left: torch.Tensor, right: torch.Tensor):
+    if left.shape != right.shape:
+        raise ValueError(f"shape mismatch {left.shape} != {right.shape}")
+    return torch.nn.Parameter(torch.tensor(right))
+
+import numpy as np
+def load_weights_into_gpt(gpt: GPTModel, params):
+    # this is a lot of code, had to copy from github
+    ## https://github.com/rasbt/LLMs-from-scratch/blob/main/ch05/01_main-chapter-code/ch05.ipynb
+
+    gpt.pos_emb.weight = assign(gpt.pos_emb.weight, params["wpe"])
+    gpt.tok_emb.weight = assign(gpt.tok_emb.weight, params["wte"])
+
+    for b in range(len(params["blocks"])):
+        trf = gpt.trf_blocks[b]  # transformer
+        atn = trf.atn
+        q_w, k_w, v_w = np.split(
+            (params["blocks"][b]["attn"]["c_attn"])["w"], 3, axis=-1)
+        gpt.trf_blocks[b].atn.W_query.weight = assign(
+            gpt.trf_blocks[b].atn.W_query.weight, q_w.T)
+        gpt.trf_blocks[b].atn.W_key.weight = assign(
+            gpt.trf_blocks[b].atn.W_key.weight, k_w.T)
+        gpt.trf_blocks[b].atn.W_value.weight = assign(
+            gpt.trf_blocks[b].atn.W_value.weight, v_w.T)
+
+        q_b, k_b, v_b = np.split(
+            (params["blocks"][b]["attn"]["c_attn"])["b"], 3, axis=-1)
+        gpt.trf_blocks[b].atn.W_query.bias = assign(
+            gpt.trf_blocks[b].atn.W_query.bias, q_b)
+        gpt.trf_blocks[b].atn.W_key.bias = assign(
+            gpt.trf_blocks[b].atn.W_key.bias, k_b)
+        gpt.trf_blocks[b].atn.W_value.bias = assign(
+            gpt.trf_blocks[b].atn.W_value.bias, v_b)
+
+        gpt.trf_blocks[b].atn.out_projection.weight = assign(
+            gpt.trf_blocks[b].atn.out_projection.weight, 
+            params["blocks"][b]["attn"]["c_proj"]["w"].T)
+        gpt.trf_blocks[b].atn.out_projection.bias = assign(
+            gpt.trf_blocks[b].atn.out_projection.bias, 
+            params["blocks"][b]["attn"]["c_proj"]["b"])
+
+        gpt.trf_blocks[b].ff.layers[0].weight = assign(
+            gpt.trf_blocks[b].ff.layers[0].weight, 
+            params["blocks"][b]["mlp"]["c_fc"]["w"].T)
+        gpt.trf_blocks[b].ff.layers[0].bias = assign(
+            gpt.trf_blocks[b].ff.layers[0].bias, 
+            params["blocks"][b]["mlp"]["c_fc"]["b"])
+        gpt.trf_blocks[b].ff.layers[2].weight = assign(
+            gpt.trf_blocks[b].ff.layers[2].weight, 
+            params["blocks"][b]["mlp"]["c_proj"]["w"].T)
+        gpt.trf_blocks[b].ff.layers[2].bias = assign(
+            gpt.trf_blocks[b].ff.layers[2].bias, 
+            params["blocks"][b]["mlp"]["c_proj"]["b"])
+
+        gpt.trf_blocks[b].norm1.scale = assign(
+            gpt.trf_blocks[b].norm1.scale, 
+            params["blocks"][b]["ln_1"]["g"])
+        gpt.trf_blocks[b].norm1.shift = assign(
+            gpt.trf_blocks[b].norm1.shift, 
+            params["blocks"][b]["ln_1"]["b"])
+        gpt.trf_blocks[b].norm2.scale = assign(
+            gpt.trf_blocks[b].norm2.scale, 
+            params["blocks"][b]["ln_2"]["g"])
+        gpt.trf_blocks[b].norm2.shift = assign(
+            gpt.trf_blocks[b].norm2.shift, 
+            params["blocks"][b]["ln_2"]["b"])
+
+    gpt.final_norm.scale = assign(gpt.final_norm.scale, params["g"])
+    gpt.final_norm.shift = assign(gpt.final_norm.shift, params["b"])
+    gpt.out_head.weight = assign(gpt.out_head.weight, params["wte"])
+
+load_weights_into_gpt(gpt2, params)
+gpt2.to(device)
+
+torch.manual_seed(123)
+token_ids = generate(
+    model=gpt2,
+    tokens=text_to_token_ids("Every effort moves you", tokenizer).to(device),
+    max_new_tokens=25,
+    context_size=OPENAI_CONFIG["context_length"],
+    top_k=50,
+    temperature=1.5 # -> more uniformed
+)
+print(f"Output from GPT2: {token_ids_to_text(token_ids, tokenizer)}")
