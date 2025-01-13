@@ -587,3 +587,9 @@ token_ids = generate(
     temperature=1.5 # -> more uniformed
 )
 print(f"Output from GPT2: {token_ids_to_text(token_ids, tokenizer)}")
+
+# exercise 5.5
+## evaluate the gpt2 model and calc the losses
+
+gpt_tl, gpt_vl = evaluate_model(gpt2, train_loader, val_loader, device, None)
+print(f"GPT train loss: {gpt_tl} and val loss: {gpt_vl}")
