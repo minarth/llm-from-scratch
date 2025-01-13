@@ -35,6 +35,7 @@ download_and_unzip_spam_data(URL, ZIP_PATH, EXTRACTED_PATH, DATA_FILE_PATH)
 
 
 df = pd.read_csv(DATA_FILE_PATH, sep="\t", header=None, names=["Label", "Text"])
+print(df["Label"])
 
 def create_balance_df(df: pd.DataFrame) -> pd.DataFrame:
     lower_class_num = df[df["Label"] == "spam"].shape[0]
@@ -43,7 +44,7 @@ def create_balance_df(df: pd.DataFrame) -> pd.DataFrame:
     return pd.concat(
         [ham_subset, df[df["Label"] == "spam"]]
     )
-balanced_df = create_balance_df(df)["Label"].value_counts()
+balanced_df = create_balance_df(df)
 balanced_df["Label"] = balanced_df["Label"].map({"ham": 0, "spam": 1})
 
 # now random split 70, 10, 20 (train, test, val)
@@ -55,7 +56,7 @@ def random_split(df: pd.DataFrame, train_fr: float, val_fr: float) -> list[pd.Da
     val_end   = train_end + int(len(df) * val_fr)
     
     # train, val, test
-    return df[:train_end], df[train_end:val_end], df[val_end]
+    return df[:train_end], df[train_end:val_end], df[:val_end]
 
 train_df, val_df, test_df = random_split(balanced_df, .7, .2)
 
@@ -66,3 +67,47 @@ test_df.to_csv("data/test.csv", index=None)
 
 
 # book 6.3
+import tiktoken
+tokenizer = tiktoken.get_encoding("gpt2")
+
+import torch
+from torch.utils.data import Dataset
+
+
+class SpamDataset(Dataset):
+    def __init__(self, csv_file: str, tokenizer: tiktoken.Encoding, max_len: int=None,
+                 pad_token_id: int=50256):
+        super().__init__()
+
+        self.data = pd.read_csv(csv_file)
+        self.encoded = [tokenizer.encode(text) for text in self.data["Text"]]
+
+        if not max_len:
+            self.max_len = self._longest_encoded()
+        else:
+            self.max_len = max_len
+            # truncate longer seqs than entered max
+            self.encoded = [enc[:self.max_len] for enc in self.encoded]
+
+        self.encoded = [
+            enc + [pad_token_id]*(self.max_len - len(enc))
+            for enc in self.encoded
+        ]
+
+    def __getitem__(self, index) -> tuple[torch.Tensor]:
+        enc = self.encoded[index]
+        label = self.data.iloc[index]["Label"]
+
+        return (
+            torch.tensor(enc, dtype=torch.long),
+            torch.tensor(label, dtype=torch.long), 
+        )
+    
+    def __len__(self) -> int:
+        return len(self.encoded)
+
+    def _longest_encoded(self) -> int:
+        return max([len(e) for e in self.encoded])
+
+train_ds = SpamDataset("data/train.csv", tokenizer) 
+print(f"max len in train: {train_ds.max_len} loaded samples {len(train_ds)}")
