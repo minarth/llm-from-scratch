@@ -176,3 +176,7 @@ cython_debug/
 .DS_Store/
 data/gpt2-smol
 gpt2/
+
+data/*pth
+data/sms_spam_collection.zip
+data/sms_spam_collection/
