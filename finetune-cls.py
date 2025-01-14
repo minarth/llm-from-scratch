@@ -111,3 +111,130 @@ class SpamDataset(Dataset):
 
 train_ds = SpamDataset("data/train.csv", tokenizer) 
 print(f"max len in train: {train_ds.max_len} loaded samples {len(train_ds)}")
+
+val_ds = SpamDataset("data/validation.csv", tokenizer, train_ds.max_len)
+test_ds = SpamDataset("data/test.csv", tokenizer, train_ds.max_len)
+
+from torch.utils.data import DataLoader
+NUM_WORKERS = 0
+BATCH_SIZE  = 8
+
+torch.manual_seed(123)
+
+train_loader = DataLoader(
+    train_ds,
+    batch_size=BATCH_SIZE,
+    shuffle=True,
+    num_workers=NUM_WORKERS,
+    drop_last=True,
+)
+
+val_loader = DataLoader(
+    val_ds,
+    batch_size=BATCH_SIZE,
+    num_workers=NUM_WORKERS,
+    drop_last=False,
+)
+test_loader = DataLoader(
+    test_ds,
+    batch_size=BATCH_SIZE,
+    num_workers=NUM_WORKERS,
+    drop_last=False,
+)
+
+input_batch, target_batch = next(iter(train_loader))   # cleaner than for .. in
+print(f"inp b dims {input_batch.shape}")
+print(f"target b dim {target_batch.shape}")
+
+
+print("-"*10)
+print(f"train b {len(train_loader)}, test b {len(test_loader)}, val b {len(val_loader)}")
+
+# book 6.4 init the model
+## gpt2 S again
+
+#### load the model
+
+MODEL_NM = "gpt2-small"
+MODEL_SIZE = {
+    "gpt2-small": "124M",
+}
+INPUT_PROMPT = "Every effort moves" # he needs to get more creative
+
+# i have the configs defined in training.py, duplicating it so it is not interdependent
+BASE_CONFIG = {
+    "vocab_size": 50257,
+    "context_length": 1024,
+    "drop_rate": .0,
+    "qkv_bias": True,
+}
+
+OPENAI_MODEL = {
+    "gpt2-small": {"emb_dim": 768, "n_layers": 12, "n_heads": 12},
+    "gpt2-medium": {"emb_dim": 1024, "n_layers": 24, "n_heads": 16},
+    "gpt2-large": {"emb_dim": 1280, "n_layers": 36, "n_heads": 20},
+    "gpt2-xl": {"emb_dim": 1600, "n_layers": 48, "n_heads": 25},
+}
+
+BASE_CONFIG.update(OPENAI_MODEL[MODEL_NM])
+
+from gpt_download import download_and_load_gpt2
+from gpt import GPTModel
+from training import load_weights_into_gpt
+
+settings, params = download_and_load_gpt2(model_size=MODEL_SIZE[MODEL_NM],
+                                          models_dir="gpt2")
+model = GPTModel(BASE_CONFIG)   # dont like the naming
+load_weights_into_gpt(model, params)
+model.eval()
+
+# test generation
+from gpt import generate_text_simple
+from training import text_to_token_ids, token_ids_to_text
+print("="*20)
+text_1 = "Every effort moves you"
+token_ids = generate_text_simple(
+    model, text_to_token_ids(text_1, tokenizer),
+    max_new_tokens=15,
+    context_size=BASE_CONFIG["context_length"]
+)
+
+print(f"test string: {token_ids_to_text(token_ids, tokenizer)}")
+
+text_2 = (
+    "Is the following text 'spam'? Answer with 'yes' or 'no':"
+    " 'You are a winner you have been specially"
+    " selected to receive $1000 cash or $2000 award.'"
+)
+
+token_ids = generate_text_simple(
+    model,
+    text_to_token_ids(text_2, tokenizer),
+    max_new_tokens=23,
+    context_size=BASE_CONFIG["context_length"],
+)
+print(f"instruct spam detection: {token_ids_to_text(token_ids, tokenizer)}")
+
+# book 6.5
+# print(model)  # prints nice output
+
+## lets freeze the layers
+for param in model.parameters():
+    param.requires_grad = False
+
+## replace end layer
+torch.manual_seed(123)
+NUM_CLASSES = 2
+model.out_head = torch.nn.Linear(
+    in_features=BASE_CONFIG["emb_dim"],
+    out_features=NUM_CLASSES
+)
+
+# to improve finetune perf
+for param in model.trf_blocks[-1].parameters():
+    param.requires_grad = True
+
+for param in model.final_norm.parameters():
+    param.requires_grad = True
+
+## test calling it with text
