@@ -238,3 +238,82 @@ for param in model.final_norm.parameters():
     param.requires_grad = True
 
 ## test calling it with text
+inputs = tokenizer.encode("Do you have time")
+inputs = torch.tensor(inputs).unsqueeze(0)
+print(f"inputs: {inputs} shape {inputs.shape}")
+
+with torch.no_grad():
+    outs = model(inputs)
+    print(f"outs: {outs} dims {outs.shape}")
+
+last_token = outs[:, -1, :]
+
+label = torch.argmax(last_token)
+print(f"label {label.item()}")
+
+def calc_accuracy(data_loader, model, device, num_batches=None):
+    model.eval()
+    correct_predictions, total_examples = 0, 0
+
+    if num_batches is None:
+        num_batches = len(data_loader)
+    else:
+        num_batches = min(num_batches, len(data_loader))
+
+    for i, (input_batch, label_batch) in enumerate(data_loader):
+        if i >=  num_batches:
+            break
+        
+        input_batch = input_batch.to(device)
+        label_batch = label_batch.to(device)
+        with torch.no_grad():
+            out = model(input_batch)[:, -1, :]
+            out = torch.argmax(out, dim=-1)
+            total_examples += out.shape[0]
+            correct_predictions += (out == label_batch).sum().item()
+
+
+    assert total_examples > 0, "cannot provide accuracy for zero trie (div by zero)"
+    return correct_predictions / total_examples
+
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
+
+torch.manual_seed(123)
+train_acc = calc_accuracy(train_loader, model, device)
+test_acc  = calc_accuracy(test_loader, model, device)
+val_acc   = calc_accuracy(val_loader, model, device)
+
+print(f"tr {train_acc*100:.2f} test {test_acc*100:.2f} val {val_acc*100:.2f}")
+
+def calc_loss_batch(x: torch.Tensor, y: torch.Tensor, model: GPTModel, device):
+    x = x.to(device)
+    y = y.to(device)
+
+    # also called logits
+    y_pred = model(x)[:, -1, :]
+    loss = torch.nn.functional.cross_entropy(y_pred, y)
+    return loss # doin two liner for clarity
+
+def calc_loss_loader(data_loader, model, device, num_batches=None):
+    if len(data_loader) == 0: return float("nan")
+    if num_batches is None:
+        num_batches = len(data_loader)
+    else:
+        num_batches = min(num_batches, len(data_loader))
+    loss = .0
+
+    for i, (x,y) in enumerate(data_loader):
+        if i >= num_batches: break
+        loss += calc_loss_batch(x, y, model, device).item()
+    return loss/num_batches 
+# calc the loss function before tuning
+with torch.no_grad():
+    train_loss = calc_loss_loader(train_loader, model, device)
+    val_loss   = calc_loss_loader(val_loader, model, device)
+    test_loss  = calc_loss_loader(test_loader, model, device)
+    print(f"tl {train_loss} vl {val_loss} testl {test_loss}")
+
+# lets implement the finetuning
+# book 6.7
